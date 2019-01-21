@@ -1,1 +1,7 @@
 node_modules
+.idea
+*iml
+gactions
+**/creds.data
+**/package-lock.json
+**/jwt-key.json

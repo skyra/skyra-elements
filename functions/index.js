@@ -108,6 +108,19 @@ app.get('/api/device/:deviceId', (req, res) => {
   });
 });
 
+// Callback url
+app.post('/api/callback', (req, res) => { 
+  var ref = admin.database().ref(`/users/${req.user.uid}/callback`);
+  ref.set(req.body.url);
+  ref.once('value')
+  .then(snapshot => {
+    const val = snapshot.val();
+    res.status(201).json(val);
+  }).catch(error => {
+    console.log('Error saving callback url', error.message);
+    res.sendStatus(500);
+  });
+});
 
 // Auth a user for google
 const auth = express();

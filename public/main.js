@@ -18,6 +18,7 @@
 
 function Demo() {
   $(function() {
+    this.$setCallbackButton = $('#set-callback-button');
     this.$signInButton = $('#demo-sign-in-button');
     this.$signOutButton = $('#demo-sign-out-button');
     this.$traitOnOff = $('#trait-onoff');
@@ -26,12 +27,15 @@ function Demo() {
     this.$traitColorSpectrum = $('#trait-colorSpectrum');
     this.$traitTemperatureSetting = $('#trait-temperatureSetting');
     this.$traitScene = $('#trait-scene');
+    this.$urlTextInput = $('#url-text-input');
     this.$messageTextarea = $('#demo-message');
     this.$createMessageButton = $('#demo-create-message');
     this.$createMessageResult = $('#demo-create-message-result');
     this.$messageListButtons = $('.message-list-button');
     this.$messageList = $('#demo-message-list');
     this.$messageDetails = $('#demo-message-details');
+
+    this.$setCallbackButton.on('click', this.setCallback.bind(this));
 
     this.$signInButton.on('click', this.signIn.bind(this));
     this.$signOutButton.on('click', this.signOut.bind(this));
@@ -40,6 +44,22 @@ function Demo() {
     firebase.auth().onAuthStateChanged(this.onAuthStateChanged.bind(this));
   }.bind(this));
 }
+
+Demo.prototype.setCallback = function() {
+  var url = this.$urlTextInput.val();
+
+  if (url === '') return;
+
+  // Make an authenticated POST request to create a new message
+  this.authenticatedRequest('POST', '/api/callback', {'url': url}).then(function(response) {
+    this.$urlTextInput.parent().removeClass('is-dirty');
+
+    this.$createMessageResult.html('Set callback url: ' + url);
+  }.bind(this)).catch(function(error) {
+    console.log('Error setting callback url:', url);
+    throw error;
+  });
+};
 
 Demo.prototype.signIn = function() {
   firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());

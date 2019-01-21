@@ -3,6 +3,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const express = require('express');
+const request = require('request');
 
 const app = express();
 // Express middleware that validates Firebase ID Tokens passed in the Authorization HTTP header.
@@ -165,6 +166,8 @@ function getAccessToken(request) {
             commands: reqdata.inputs[0].payload.commands
           }, res).then(function(value) {
 
+              console.log("exec result %j", value);
+
               let resBody = {
       					requestId: reqdata.requestId,
       					payload: {
@@ -172,9 +175,13 @@ function getAccessToken(request) {
       					}
     					};
 
-    					console.log("resBody ", resBody);
+    					console.log("resBody %j", resBody);
 
-    					res.status(200).json(resBody);
+              admin.database().ref(`/users/${uid}/callback`).once('value').then(snapshot => {
+                postDeviceUpdate(snapshot.val(), value[0], function() {
+                  res.status(200).json(resBody);
+                });
+              })
 						}, function(reason) {
 						  console.log(reason)
 						});
@@ -480,7 +487,7 @@ function getAccessToken(request) {
    * }
    */
   function exec(data, res) {
-    console.log('exec', data);
+    console.log('exec %j', data);
     let respCommands = [];
     for (let i = 0; i < data.commands.length; i++) {
       let curCommand = data.commands[i];
@@ -588,7 +595,7 @@ function getAccessToken(request) {
   		console.log("attempt to save ", command.params);
 			admin.database().ref(`/users/${uid}/devices`).child(device.id).child('states').update(command.params, function(error) {
   			if (error) {
-  			  consloe.log("Data could not be saved." + error);
+  			  console.log("Data could not be saved." + error);
   			  reject();
   			} else {
   			  admin.database().ref(`/users/${uid}/devices`).child(device.id).once('value').then(snapshot => {
@@ -613,6 +620,18 @@ function getAccessToken(request) {
 			});
 
   	});
+  }
+
+  function postDeviceUpdate(url, commands, callback) {
+    request.post(url, { json: { commands: commands } },
+        function (error, response, body) {
+            if (!error && response.statusCode == 200) {
+                console.log(body)
+                callback();
+            }
+            console.log("done")
+        }
+    );
   }
 
 module.exports = app
