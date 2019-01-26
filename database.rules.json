@@ -1,12 +1,15 @@
 {
   "rules": {
-    "users": {
+    "devices": {
       "$uid": {
         ".read": "auth.uid === $uid",
         ".write": "auth.uid === $uid",
-        "devices": {
-          ".indexOn": ["properties/type"]
-        }
+      },
+    },
+    "states": {
+      "$uid": {
+        ".read": "auth.uid === $uid",
+        ".write": "auth.uid === $uid",
       }
     }
   }

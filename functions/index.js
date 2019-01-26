@@ -1,145 +1,225 @@
-/**
- * Copyright 2017 Google Inc. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 'use strict';
 
 const REDIRECT_URL = "https://oauth-redirect.googleusercontent.com/r/skyra-elements"
 
 const functions = require('firebase-functions');
+const {smarthome} = require('actions-on-google');
+// const util = require('util');
 const admin = require('firebase-admin');
-const express = require('express');
-const ha = require('./ha');
+// Initialize Firebase
+admin.initializeApp();
+const devicesRef = admin.database().ref('devices');
+const statesRef = admin.database().ref('states');
 
-const app = express();
-
-admin.initializeApp(functions.config().firebase);
-
-// Express middleware that validates Firebase ID Tokens passed in the Authorization HTTP header.
-// The Firebase ID token needs to be passed as a Bearer token in the Authorization HTTP header like this:
-// `Authorization: Bearer <Firebase ID Token>`.
-// when decoded successfully, the ID Token content will be added as `req.user`.
-const authenticate = (req, res, next) => {
-  if (!req.headers.authorization || !req.headers.authorization.startsWith('Bearer ')) {
-    res.status(403).send('Unauthorized');
-    return;
-  }
-  console.log(req.headers.authorization)
-  const idToken = req.headers.authorization.split('Bearer ')[1];
-  admin.auth().verifyIdToken(idToken).then(decodedIdToken => {
-    req.user = decodedIdToken;
-    next();
-  }).catch(error => {
-    res.status(403).send('Unauthorized');
-  });
-};
-
-app.use(authenticate);
-
-// POST /api/devices
-// Create a new device
-app.post('/api/devices', (req, res) => {
-  const device = req.body;
-  //TODO: check the device json is correct?
-  
-  admin.database().ref(`/users/${req.user.uid}/devices`).push(device).once('value')
-  .then(snapshot => {
-    const val = snapshot.val();
-    res.status(201).json(val);
-  }).catch(error => {
-    console.log('Error detecting sentiment or saving message', error.message);
-    res.sendStatus(500);
-  });
-});
-
-// GET /api/devices?type={type}
-// Get all devices, optionally specifying a type to filter on
-app.get('/api/devices', (req, res) => {
-  const type = req.query.type;
-  let query = admin.database().ref(`/users/${req.user.uid}/devices`);
-
-  if (type && ['light', 'outlet', 'switch', 'thermostat', 'scene'].indexOf(type) > -1) {
-    // Update the query with the valid category
-    query = query.orderByChild('properties/type').equalTo("action.devices.types."+type.toUpperCase());
-  } else if (type) {
-    return res.status(404).json({errorCode: 404, errorMessage: `type '${type}' not found`});
-  }
-
-  query.once('value').then(snapshot => {
-    var devices = [];
-    snapshot.forEach(childSnapshot => {
-      devices.push({key: childSnapshot.key, device: childSnapshot.val().device});
-    });
-
-    return res.status(200).json(devices);
-  }).catch(error => {
-    console.log('Error getting devices', error.message);
-    res.sendStatus(500);
-  });
-});
-
-// GET /api/device/{deviceId}
-// Get details about a device
-app.get('/api/device/:deviceId', (req, res) => {
-  const deviceId = req.params.deviceId;
-  admin.database().ref(`/users/${req.user.uid}/devices/${deviceId}`).once('value').then(snapshot => {
-    if (snapshot.val() !== null) {
-      // Cache details in the browser for 5 minutes
-      res.set('Cache-Control', 'private, max-age=300');
-      res.status(200).json(snapshot.val());
-    } else {
-      res.status(404).json({errorCode: 404, errorMessage: `device '${deviceId}' not found`});
-    }
-  }).catch(error => {
-    console.log('Error getting device details', deviceId, error.message);
-    res.sendStatus(500);
-  });
-});
-
-// Callback url
-app.post('/api/callback', (req, res) => { 
-  var ref = admin.database().ref(`/users/${req.user.uid}/callback`);
-  ref.set(req.body.url);
-  ref.once('value')
-  .then(snapshot => {
-    const val = snapshot.val();
-    res.status(201).json(val);
-  }).catch(error => {
-    console.log('Error saving callback url', error.message);
-    res.sendStatus(500);
-  });
-});
-
-// Auth a user for google
-const auth = express();
-auth.get('/auth', (req, res) => {
-  console.log(req.url);
-  if (req.query.client_id != "google" || req.query.response_type != "token" || req.query.redirect_uri != REDIRECT_URL) {
+exports.auth = functions.https.onRequest((request, response) => {
+  console.log(request.url);
+  if (request.query.client_id != "google" || request.query.response_type != "token" || request.query.redirect_uri != REDIRECT_URL) {
     res.status(403).send('Unauthorized');
     return;
   }
   res.redirect("/auth.html" + req._parsedUrl.search);
-  // res.redirect("https://710d0fb4.ngrok.io/auth" + req._parsedUrl.search);
+
+  // const responseurl = util.format('%s?code=%s&state=%s',
+  //   decodeURIComponent(request.query.redirect_uri), 'xxxxxx',
+  //   request.query.state);
+  // console.log(responseurl);
+  // return response.redirect(responseurl);
 });
 
-auth.get('/token', (req, res) => {
-    res.status(403).send('Unauthorized');
+// exports.token = functions.https.onRequest((request, response) => {
+//   const grantType = request.query.grant_type
+//     ? request.query.grant_type : request.body.grant_type;
+//   const secondsInDay = 86400; // 60 * 60 * 24
+//   const HTTP_STATUS_OK = 200;
+//   console.log(`Grant type ${grantType}`);
+
+//   let obj;
+//   if (grantType === 'authorization_code') {
+//     obj = {
+//       token_type: 'bearer',
+//       access_token: '123access',
+//       refresh_token: '123refresh',
+//       expires_in: secondsInDay,
+//     };
+//   } else if (grantType === 'refresh_token') {
+//     obj = {
+//       token_type: 'bearer',
+//       access_token: '123access',
+//       expires_in: secondsInDay,
+//     };
+//   }
+//   response.status(HTTP_STATUS_OK)
+//     .json(obj);
+// });
+
+let jwt;
+try {
+  jwt = require('./jwt-key.json');
+} catch (e) {
+  console.warn('Service account key is not found');
+  console.warn('Report state will be unavailable');
+}
+
+const app = smarthome({
+  debug: true,
+  key: 'AIzaSyAf6bt_d8mkuaL6MzmLiCEvoEShPusVEzY',
+  jwt: jwt,
 });
 
+const authenticate = (headers) => {
+  return headers.authorization.split('Bearer ')[1]
+};
 
-// Expose the API as a function
-exports.ha = functions.https.onRequest(ha);
-exports.api = functions.https.onRequest(app);
-exports.auth = functions.https.onRequest(auth);
+// app.use(authenticate);
+
+app.onSync((body, headers) => {
+  const uid = authenticate(headers);
+  return queryDeviceSync.then((devices) => {
+    return {
+      requestId: body.requestId,
+      payload: {
+        agentUserId: uid,
+        devices: devices
+      }
+    };
+  });
+});
+
+const queryDeviceSync = (uid) => devicesRef.child(uid).once('value')
+  .then((snapshot) => {
+    var devices = [];
+    snapshot.forEach(childSnapshot => {
+      var device = childSnapshot.val()
+      device.properties['id'] = childSnapshot.key
+      devices.push(device.properties);
+    });
+    return devices;
+  });
+
+const queryStateRef = (uid) => statesRef.child(uid);
+
+const queryState = (uid, deviceId) => queryStateRef(uid, deviceId).child(deviceId).once('value');
+
+app.onQuery((body, headers) => {
+  const uid = authenticate(headers);
+  const {requestId} = body;
+  const payload = {
+    devices: {},
+  };
+  const queryPromises = [];
+  for (const input of body.inputs) {
+    for (const device of input.payload.devices) {
+      const deviceId = device.id;
+      queryPromises.push(queryState(uid, deviceId)
+        .then((data) => {
+          // Add response to device payload
+          payload.devices[deviceId] = data;
+        }
+        ));
+    }
+  }
+  // Wait for all promises to resolve
+  return Promise.all(queryPromises).then((values) => ({
+    requestId: requestId,
+    payload: payload,
+  })
+  );
+});
+
+app.onExecute((body, headers) => {
+  const uid = authenticate(headers);
+  const userQueryStateRef = queryStateRef(uid);
+  const {requestId} = body;
+  const payload = {
+    commands: [{
+      ids: [],
+      status: 'SUCCESS',
+      states: {
+        online: true,
+      },
+    }],
+  };
+  for (const input of body.inputs) {
+    for (const command of input.payload.commands) {
+      for (const device of command.devices) {
+        const deviceId = device.id;
+        payload.commands[0].ids.push(deviceId);
+        for (const execution of command.execution) {
+          const {params} = execution;
+          userQueryStateRef.child(deviceId).update(params);
+        }
+      }
+    }
+  }
+  return {
+    requestId: requestId,
+    payload: payload,
+  };
+});
+
+exports.ha = functions.https.onRequest(app);
+
+
+// exports.requestsync = functions.https.onRequest((request, response) => {
+//   const headers = request.headers;
+//   if (!headers.authorization || !headers.authorization.startsWith('Bearer ')) {
+//     response.status(403).send('Unauthorized');
+//     return;
+//   }
+//   const uid = request.headers.authorization.split('Bearer ')[1]
+
+//   console.info('Request SYNC for user ' + uid);
+  
+//     .then((data) => {
+//       console.log('Request sync completed');
+//       response.json(data);
+//     }).catch((err) => {
+//       console.error(err);
+//     });
+// });
+
+exports.syncNewDevice = functions.database.ref('devices/{user_id}').onCreate((event, context) => {
+  console.info('New device added. Running Sync');
+  return app.requestSync(context.params.user_id);
+});
+
+exports.syncRemovedDevice = functions.database.ref('devices/{user_id}').onDelete((event, context) => {
+  console.info('New device added. Running Sync');
+  return app.requestSync(context.params.user_id);
+});
+
+/**
+ * Send a REPORT STATE call to the homegraph when data for any device id
+ * has been changed.
+ */
+exports.reportstate = functions.database.ref('states/{user_id}/{device_id}').onWrite((event, context) => {
+  console.info('Firebase write event triggered this cloud function');
+  if (!app.jwt) {
+    console.warn('Service account key is not configured');
+    console.warn('Report state is unavailable');
+    return;
+  }
+  const snapshotVal = event.after.val();
+ 
+  console.log(context)
+
+  const postData = {
+    //TODO: generate unique ID
+    requestId: 'ff36a3cc', /* Any unique ID */
+    agentUserId: context.params.user_id,
+    payload: {
+      devices: {
+        states: {
+          /* Report the current state of the device */
+          [event.params.device_id]: snapshotVal,
+        },
+      },
+    },
+  };
+
+  return app.reportState(postData)
+    .then((data) => {
+      console.log('Report state came back');
+      console.info(data);
+    });
+});
