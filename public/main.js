@@ -23,19 +23,17 @@ function Demo() {
     this.$signOutButton = $('#demo-sign-out-button');
     this.$traitOnOff = $('#trait-onoff');
     this.$traitBrightness = $('#trait-brightness');
-    this.$traitColorTemperature = $('#trait-colorTemperature');
-    this.$traitColorSpectrum = $('#trait-colorSpectrum');
+    this.$traitColorSetting = $('#trait-colorSetting');
     this.$traitTemperatureSetting = $('#trait-temperatureSetting');
     this.$traitScene = $('#trait-scene');
     this.$urlTextInput = $('#url-text-input');
-    this.$messageTextarea = $('#demo-message');
+    this.$devicePropertiesTextarea = $('#device-properties');
+    this.$deviceStateTextarea = $('#device-state');
     this.$createMessageButton = $('#demo-create-message');
     this.$createMessageResult = $('#demo-create-message-result');
     this.$messageListButtons = $('.message-list-button');
     this.$messageList = $('#demo-message-list');
     this.$messageDetails = $('#demo-message-details');
-
-    this.$setCallbackButton.on('click', this.setCallback.bind(this));
 
     this.$signInButton.on('click', this.signIn.bind(this));
     this.$signOutButton.on('click', this.signOut.bind(this));
@@ -44,22 +42,6 @@ function Demo() {
     firebase.auth().onAuthStateChanged(this.onAuthStateChanged.bind(this));
   }.bind(this));
 }
-
-Demo.prototype.setCallback = function() {
-  var url = this.$urlTextInput.val();
-
-  if (url === '') return;
-
-  // Make an authenticated POST request to create a new message
-  this.authenticatedRequest('POST', '/api/callback', {'url': url}).then(function(response) {
-    this.$urlTextInput.parent().removeClass('is-dirty');
-
-    this.$createMessageResult.html('Set callback url: ' + url);
-  }.bind(this)).catch(function(error) {
-    console.log('Error setting callback url:', url);
-    throw error;
-  });
-};
 
 Demo.prototype.signIn = function() {
   firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -74,10 +56,12 @@ Demo.prototype.onAuthStateChanged = function(user) {
     // If we have a user, simulate a click to get all their messages.
     // Material Design Lite will create a <span> child that we'll expect to be clicked
     $('#message-list-button-all > span').click();
-    this.$messageTextarea.removeAttr('disabled');
+    this.$devicePropertiesTextarea.removeAttr('disabled');
+    this.$deviceStateTextarea.removeAttr('disabled');
     this.$createMessageButton.removeAttr('disabled');
   } else {
-    this.$messageTextarea.attr('disabled', true);
+    this.$devicePropertiesTextarea.attr('disabled', true);
+    this.$deviceStateTextarea.attr('disabled', true);
     this.$createMessageButton.attr('disabled', true);
     this.$createMessageResult.html('');
     this.$messageList.html('');
@@ -86,25 +70,39 @@ Demo.prototype.onAuthStateChanged = function(user) {
 };
 
 Demo.prototype.createMessage = function() {
+  if (!firebase.auth().currentUser) {
+    throw new Error('Not authenticated. Make sure you\'re signed in!');
+  }
+
+  var uid = firebase.auth().currentUser.uid
+
   var type = $('input[name=device-type]:checked').val()
   var traits = this.traits();
-  var device = this.$messageTextarea.val();
+  var device = this.$devicePropertiesTextarea.val();
+  var state = this.$deviceStateTextarea.val();
 
-  if (device === '') return;
+  if (device === '' || state === '') return;
   device = JSON.parse(device)
-  device["properties"]["traits"] = traits;
-  device["properties"]["type"] = "action.devices.types." + type.toUpperCase();
+  device["traits"] = traits;
+  device["type"] = "action.devices.types." + type.toUpperCase();
 
-  // Make an authenticated POST request to create a new message
-  this.authenticatedRequest('POST', '/api/devices', device).then(function(response) {
-    this.$messageTextarea.val('');
-    this.$messageTextarea.parent().removeClass('is-dirty');
+  var newDeviceKey = firebase.database().ref().child('devices').child(uid).push().key;
 
-    this.$createMessageResult.html('Created device: ' + response.device);
-  }.bind(this)).catch(function(error) {
-    console.log('Error creating device:', device);
-    throw error;
-  });
+  // Write the new post's data simultaneously in the posts list and the user's post list.
+  var updates = {};
+  updates['/devices/' + uid + '/' + newDeviceKey] = device;
+  updates['/states/' + uid + '/' + newDeviceKey] = JSON.parse(state);
+
+  firebase.database().ref().update(updates, function(error) {
+    if (error) {
+      console.log('Error creating device:', device);
+    } else {
+      this.$devicePropertiesTextarea.val('');
+      this.$deviceStateTextarea.val('');
+      this.$devicePropertiesTextarea.parent().removeClass('is-dirty');
+      this.$createMessageResult.html('Created device: ' + newDeviceKey);
+    }
+  }.bind(this));
 };
 
 Demo.prototype.traits = function() {
@@ -115,11 +113,8 @@ Demo.prototype.traits = function() {
   if (this.$traitBrightness.is(':checked')) {
     traits.push("action.devices.traits.Brightness")
   }
-  if (this.$traitColorTemperature.is(':checked')) {
-    traits.push("action.devices.traits.ColorTemperature")
-  }
-  if (this.$traitColorSpectrum.is(':checked')) {
-    traits.push("action.devices.traits.ColorSpectrum")
+  if (this.$traitColorSetting.is(':checked')) {
+    traits.push("action.devices.traits.ColorSetting")
   }
   if (this.$traitTemperatureSetting.is(':checked')) {
     traits.push("action.devices.traits.TemperatureSetting")
@@ -136,19 +131,28 @@ Demo.prototype.listMessages = function(event) {
   this.$messageList.html('');
   this.$messageDetails.html('');
 
-  // Make an authenticated GET request for a list of messages
-  // Optionally specifying a category (positive, negative, neutral)
+  var ref = this.authenticatedRef('devices');
+
+  // Optionally specifying a type
   var label = $(event.target).parent().text().toLowerCase();
-  var category = label === 'all' ? '' : label;
-  var url = category ? '/api/devices?type=' + category : '/api/devices';
-  this.authenticatedRequest('GET', url).then(function(response) {
-    var elements = response.map(function(message) {
-      return $('<li>')
-        .text(message)
+  var type = label === 'all' ? undefined : label;
+  if (type) {
+   ref = ref.orderByChild("type").equalTo("action.devices.types." + type.toUpperCase())
+  }
+
+  ref.once('value').then(function(snapshot) {
+    var elements = []
+    snapshot.forEach(function(childSnapshot) {
+      var childKey = childSnapshot.key;
+      var childData = childSnapshot.val();
+
+      elements.push($('<li>')
+        .text(childKey)
         .addClass('mdl-list__item')
-        .data('key', message.key)
-        .on('click', this.messageDetails.bind(this));
-    }.bind(this));
+        .data('key', childKey)
+        .on('click', this.messageDetails.bind(this)))
+      // ...
+    }.bind(this))
 
     // Append items to the list and simulate a click to fetch the first message's details
     this.$messageList.append(elements);
@@ -156,10 +160,11 @@ Demo.prototype.listMessages = function(event) {
     if (elements.length > 0) {
       elements[0].click();
     }
-  }.bind(this)).catch(function(error) {
+
+  }.bind(this)).catch((error) => {
     console.log('Error listing devices.');
     throw error;
-  });
+  })
 };
 
 Demo.prototype.messageDetails = function(event) {
@@ -167,38 +172,21 @@ Demo.prototype.messageDetails = function(event) {
   $(event.target).addClass('selected');
 
   var key = $(event.target).data('key');
-  this.authenticatedRequest('GET', '/api/device/' + key).then(function(response) {
-    this.$messageDetails.text(JSON.stringify(response, null, 2));
-  }.bind(this)).catch(function(error) {
+
+  this.authenticatedRef('devices').child(key).once('value').then(function(snapshot) {
+    this.$messageDetails.text(JSON.stringify(snapshot.val(), null, 2));
+  }.bind(this)).catch((error) => {
     console.log('Error getting device details.');
     throw error;
   });
 };
 
-Demo.prototype.authenticatedRequest = function(method, url, body) {
+Demo.prototype.authenticatedRef = function(ref) {
   if (!firebase.auth().currentUser) {
     throw new Error('Not authenticated. Make sure you\'re signed in!');
   }
 
-  // Get the Firebase auth token to authenticate the request
-  return firebase.auth().currentUser.getToken().then(function(token) {
-    var request = {
-      method: method,
-      url: url,
-      dataType: 'json',
-      beforeSend: function(xhr) { xhr.setRequestHeader('Authorization', 'Bearer ' + token); }
-    };
-
-    if (method === 'POST') {
-      request.contentType = 'application/json';
-      request.data = JSON.stringify(body);
-    }
-
-    console.log('Making authenticated request:', method, url);
-    return $.ajax(request).catch(function() {
-      throw new Error('Request error: ' + method + ' ' + url);
-    });
-  });
-};
+  return firebase.database().ref(ref).child(firebase.auth().currentUser.uid)
+}
 
 window.demo = new Demo();

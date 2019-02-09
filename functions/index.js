@@ -4,7 +4,7 @@ const REDIRECT_URL = "https://oauth-redirect.googleusercontent.com/r/skyra-eleme
 
 const functions = require('firebase-functions');
 const {smarthome} = require('actions-on-google');
-// const util = require('util');
+const uuidv1 = require('uuid/v1');
 const admin = require('firebase-admin');
 // Initialize Firebase
 admin.initializeApp();
@@ -17,7 +17,7 @@ exports.auth = functions.https.onRequest((request, response) => {
     res.status(403).send('Unauthorized');
     return;
   }
-  res.redirect("/auth.html" + req._parsedUrl.search);
+  response.redirect("/auth.html" + request._parsedUrl.search);
 
   // const responseurl = util.format('%s?code=%s&state=%s',
   //   decodeURIComponent(request.query.redirect_uri), 'xxxxxx',
@@ -74,7 +74,7 @@ const authenticate = (headers) => {
 
 app.onSync((body, headers) => {
   const uid = authenticate(headers);
-  return queryDeviceSync.then((devices) => {
+  return queryDeviceSync(uid).then((devices) => {
     return {
       requestId: body.requestId,
       payload: {
@@ -90,8 +90,8 @@ const queryDeviceSync = (uid) => devicesRef.child(uid).once('value')
     var devices = [];
     snapshot.forEach(childSnapshot => {
       var device = childSnapshot.val()
-      device.properties['id'] = childSnapshot.key
-      devices.push(device.properties);
+      device['id'] = childSnapshot.key
+      devices.push(device);
     });
     return devices;
   });
@@ -178,21 +178,35 @@ exports.ha = functions.https.onRequest(app);
 //     });
 // });
 
-exports.syncNewDevice = functions.database.ref('devices/{user_id}').onCreate((event, context) => {
-  console.info('New device added. Running Sync');
-  return app.requestSync(context.params.user_id);
+exports.syncNewDevice = functions.database.ref('devices/{user_id}/{device_id}').onCreate((event, context) => {
+  console.info('New device added. Running Sync for ' + context.params.user_id);
+  return app.requestSync(context.params.user_id).then((res) => {
+    console.log("success")
+    console.log(res)
+  })
+  .catch((res) => {
+    console.log("error")
+    console.log(res)
+  })
 });
 
-exports.syncRemovedDevice = functions.database.ref('devices/{user_id}').onDelete((event, context) => {
-  console.info('New device added. Running Sync');
-  return app.requestSync(context.params.user_id);
+exports.syncRemovedDevice = functions.database.ref('devices/{user_id}/{device_id}').onDelete((event, context) => {
+  console.info('Device removed. Running Sync for ' + context.params.user_id);
+  return app.requestSync(context.params.user_id).then((res) => {
+    console.log("success")
+    console.log(res)
+  })
+  .catch((res) => {
+    console.log("error")
+    console.log(res)
+  })
 });
 
 /**
  * Send a REPORT STATE call to the homegraph when data for any device id
  * has been changed.
  */
-exports.reportstate = functions.database.ref('states/{user_id}/{device_id}').onWrite((event, context) => {
+exports.reportstate = functions.database.ref('states/{user_id}/{device_id}').onUpdate((event, context) => {
   console.info('Firebase write event triggered this cloud function');
   if (!app.jwt) {
     console.warn('Service account key is not configured');
@@ -204,14 +218,13 @@ exports.reportstate = functions.database.ref('states/{user_id}/{device_id}').onW
   console.log(context)
 
   const postData = {
-    //TODO: generate unique ID
-    requestId: 'ff36a3cc', /* Any unique ID */
+    requestId: uuidv1(),
     agentUserId: context.params.user_id,
     payload: {
       devices: {
         states: {
           /* Report the current state of the device */
-          [event.params.device_id]: snapshotVal,
+          [context.params.device_id]: snapshotVal,
         },
       },
     },

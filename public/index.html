@@ -15,7 +15,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Authenticated JSON API</title>
+    <title>Skyra Elements</title>
 
     <!-- Material Design Lite -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -28,7 +28,7 @@
     <header class="mdl-layout__header mdl-color-text--white mdl-color--light-blue-700">
       <div class="mdl-cell mdl-cell--12-col mdl-cell--12-col-tablet mdl-grid">
         <div class="mdl-layout__header-row mdl-cell mdl-cell--12-col mdl-cell--12-col-tablet mdl-cell--8-col-desktop">
-          <h3>Authenticated JSON API Demo</h3>
+          <h3>Skyra Elements Home Control</h3>
         </div>
       </div>
     </header>
@@ -40,8 +40,7 @@
             <h2 class="mdl-card__title-text">Sign in with Google</h2>
           </div>
           <div class="mdl-card__supporting-text mdl-color-text--grey-600">
-            This web application demonstrates how to expose an authenticated JSON API via Firebase Hosting and
-            Cloud Functions for Firebase.
+            This application allows for creating new devices which can be controlled by google assistant.
           </div>
           <div class="mdl-card__actions mdl-card--border">
             <button id="demo-sign-in-button" class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect">
@@ -63,15 +62,6 @@
     </div>
 
     <div class="mdl-grid">
-          <div class="mdl-cell mdl-cell--8-col mdl-shadow--2dp demo-create-message">
-        <h4>Callback Url</h4>
-
-      <input class="mdl-textfield__input" type="text" id="url-text-input" >
-      <button id="set-callback-button" class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect">
-        Set callback url
-      </button>
-      </div>
-
       <div class="mdl-cell mdl-cell--8-col mdl-shadow--2dp demo-create-message">
         <h4>New Device</h4>
 
@@ -92,6 +82,10 @@
           <input class="mdl-radio__button" id="thermostat" name="device-type" type="radio" value="thermostat">
           <span class="mdl-radio__label">Thermostat</span>
         </label>
+        <label class="mdl-radio mdl-js-radio mdl-js-ripple-effect" for="ac_unit">
+          <input class="mdl-radio__button" id="ac_unit" name="device-type" type="radio" value="ac_unit">
+          <span class="mdl-radio__label">Air Conditioner</span>
+        </label>
         <label class="mdl-radio mdl-js-radio mdl-js-ripple-effect" for="scene">
           <input class="mdl-radio__button" id="scene" name="device-type" type="radio" value="scene">
           <span class="mdl-radio__label">Scene</span>
@@ -106,13 +100,9 @@
           <input type="checkbox" id="trait-brightness" class="mdl-checkbox__input">
           <span class="mdl-checkbox__label">Brightness</span>
         </label>
-        <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="trait-colorTemperature">
-          <input type="checkbox" id="trait-colorTemperature" class="mdl-checkbox__input">
-          <span class="mdl-checkbox__label">ColorTemperature</span>
-        </label>
-        <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="trait-colorSpectrum">
-          <input type="checkbox" id="trait-colorSpectrum" class="mdl-checkbox__input">
-          <span class="mdl-checkbox__label">ColorSpectrum</span>
+        <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="trait-ColorSetting">
+          <input type="checkbox" id="trait-colorSetting" class="mdl-checkbox__input">
+          <span class="mdl-checkbox__label">ColorSetting</span>
         </label>
         <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="trait-temperatureSetting">
           <input type="checkbox" id="trait-temperatureSetting" class="mdl-checkbox__input">
@@ -127,38 +117,30 @@
 
 
         <div class="mdl-textfield mdl-js-textfield">
-          <textarea class="mdl-textfield__input" type="text" rows="4" id="demo-message" >
+          <textarea class="mdl-textfield__input" type="text" rows="4" id="device-properties" >
 {
-    "properties" : {
-        "name": {
-            "defaultNames": ["Smart Light"],
-            "name": "Smart Light",
-            "nicknames": [ "Light Nickname" ]
-        },
-        "willReportState": false,
-        "roomHint": "living room",
-        "deviceInfo": {
-            "manufacturer": "Smart Home Provider",
-            "model": "g1337",
-            "swVersion": "1.0.11",
-            "hwVersion": "1.0"
-        },
-        "customData": {
-            "smartHomeProviderId": "FkldJVJCmDNSaoLkoq0txiz8Byf2Hr"
-        }
-    },
-    "states": {
-        "on": false,
-        "online": false,
-        "brightness": 80,
-        "color": {
-            "name": "cerulian",
-            "spectrumRGB": 31655
-        }
-    }
+  "name": {
+    "name": "Smart Light"
+  },
+  "willReportState": false,
+  "roomHint": "living room"
 }
           </textarea>
-          <label class="mdl-textfield__label" for="demo-message">JSON for device</label>
+          <label class="mdl-textfield__label" for="device-properties">JSON for device</label>
+        </div>
+        <div class="mdl-textfield mdl-js-textfield">
+          <textarea class="mdl-textfield__input" type="text" rows="4" id="device-state" >
+{
+  "on": false,
+  "online": false,
+  "brightness": 80,
+  "color": {
+      "name": "cerulian",
+      "spectrumRGB": 31655
+  }
+}
+          </textarea>
+          <label class="mdl-textfield__label" for="device-state">JSON for device state</label>
         </div>
         <a id="demo-create-message" class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect">
           Save
@@ -170,12 +152,13 @@
     <div class="mdl-grid">
       <div class="mdl-cell mdl-cell--4-col mdl-shadow--2dp">
         <div class="demo-message-list">
-          <h5>List Messages</h5>
+          <h5>List Devices</h5>
           <button id="message-list-button-all" class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">All</button>
           <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">Light</button>
           <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">Outlet</button>
           <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">Switch</button>
           <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">Thermostat</button>
+          <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">AC_UNIT</button>
           <button class="mdl-button mdl-button--raised mdl-js-button mdl-js-ripple-effect message-list-button">Scene</button>
 
           <ul id="demo-message-list" class="mdl-list"></ul>
@@ -184,16 +167,16 @@
 
       <div class="mdl-cell mdl-cell--4-col mdl-shadow--2dp">
         <div class="demo-message-details">
-          <h5>Message Details</h5>
+          <h5>Device Details</h5>
           <pre id="demo-message-details"></pre>
         </div>
       </div>
     </div>
 
     <script src="https://code.getmdl.io/1.1.3/material.min.js"></script>
-    <script src="/__/firebase/4.9.0/firebase-app.js"></script>
-    <script src="/__/firebase/4.9.0/firebase-auth.js"></script>
-    <script src="/__/firebase/4.9.0/firebase-database.js"></script>
+    <script src="/__/firebase/5.8.0/firebase-app.js"></script>
+    <script src="/__/firebase/5.8.0/firebase-auth.js"></script>
+    <script src="/__/firebase/5.8.0/firebase-database.js"></script>
     <script src="/__/firebase/init.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
     <script src="main.js"></script>
